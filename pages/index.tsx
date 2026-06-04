@@ -949,42 +949,37 @@ Provide winning strategies, pinpoint tactical blunders, and give clear, actionab
 
         {/* BOARD */}
         <div className="board-col">
-          {/* Above board = opponent side when NOT flipped */}
-          {!flipped &&
-      {/* ── Difficulty Bar — always on the opponent's side of the board ── */}
-      {(mode === 'ai' || mode === 'llm') && (() => {
-        const LEVELS = [
-          { id: 'beginner'    as LlmDifficulty, icon: '♟', label: 'Beginner',
-            sub: mode==='ai' ? 'Depth 1' : '~700 ELO' },
-          { id: 'professional'as LlmDifficulty, icon: '♞', label: 'Professional',
-            sub: mode==='ai' ? 'Depth 2' : '~1800 ELO' },
-          { id: 'master'      as LlmDifficulty, icon: '♔', label: 'Master',
-            sub: mode==='ai' ? 'Depth 3' : '2500+ ELO' },
-        ]
-        return (
-          <div className="diff-bar">
-            <div className="diff-bar-label">
-              {mode === 'ai' ? '🖥 Computer' : '⚡ Ritual LLM'}
+          {/* Difficulty bar on opponent's side */}
+          {(mode === 'ai' || mode === 'llm') && !flipped && (
+            <div className="diff-bar">
+              <div className="diff-bar-label">
+                {mode === 'ai' ? '🖥 Computer' : '⚡ Ritual LLM'}
+              </div>
+              <div className="diff-bar-btns">
+                {(['beginner', 'professional', 'master'] as LlmDifficulty[]).map(lvl => (
+                  <button
+                    key={lvl}
+                    className={`dbar-btn dbar-${lvl}${difficulty === lvl ? ' active' : ''}`}
+                    onClick={() => setDifficulty(lvl)}
+                  >
+                    <span className="dbar-icon">
+                      {lvl === 'beginner' ? '\u265f' : lvl === 'professional' ? '\u265e' : '\u2654'}
+                    </span>
+                    <span className="dbar-txt">
+                      <span className="dbar-label">
+                        {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
+                      </span>
+                      <span className="dbar-sub">
+                        {mode === 'ai'
+                          ? lvl === 'beginner' ? 'Depth 1' : lvl === 'professional' ? 'Depth 2' : 'Depth 3'
+                          : lvl === 'beginner' ? '~700 ELO' : lvl === 'professional' ? '~1800 ELO' : '2500+ ELO'}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="diff-bar-btns">
-              {LEVELS.map(lvl => (
-                <button
-                  key={lvl.id}
-                  className={`dbar-btn dbar-${lvl.id}${difficulty === lvl.id ? ' active' : ''}`}
-                  onClick={() => setDifficulty(lvl.id)}
-                >
-                  <span className="dbar-icon">{lvl.icon}</span>
-                  <span className="dbar-txt">
-                    <span className="dbar-label">{lvl.label}</span>
-                    <span className="dbar-sub">{lvl.sub}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )
-      })()}
-          }
+          )}
           <div className="board-outer">
             <div className="board">
               {Array.from({length:64},(_,vi)=>{
@@ -1026,42 +1021,38 @@ Provide winning strategies, pinpoint tactical blunders, and give clear, actionab
             </div>
             <span className="move-count">Move {gs.fullMove}</span>
           </div>
-          {/* Below board = opponent side when flipped */}
-          {flipped &&
-      {/* ── Difficulty Bar — always on the opponent's side of the board ── */}
-      {(mode === 'ai' || mode === 'llm') && (() => {
-        const LEVELS = [
-          { id: 'beginner'    as LlmDifficulty, icon: '♟', label: 'Beginner',
-            sub: mode==='ai' ? 'Depth 1' : '~700 ELO' },
-          { id: 'professional'as LlmDifficulty, icon: '♞', label: 'Professional',
-            sub: mode==='ai' ? 'Depth 2' : '~1800 ELO' },
-          { id: 'master'      as LlmDifficulty, icon: '♔', label: 'Master',
-            sub: mode==='ai' ? 'Depth 3' : '2500+ ELO' },
-        ]
-        return (
-          <div className="diff-bar">
-            <div className="diff-bar-label">
-              {mode === 'ai' ? '🖥 Computer' : '⚡ Ritual LLM'}
+
+          {/* Difficulty bar on opponent's side */}
+          {(mode === 'ai' || mode === 'llm') && flipped && (
+            <div className="diff-bar">
+              <div className="diff-bar-label">
+                {mode === 'ai' ? '🖥 Computer' : '⚡ Ritual LLM'}
+              </div>
+              <div className="diff-bar-btns">
+                {(['beginner', 'professional', 'master'] as LlmDifficulty[]).map(lvl => (
+                  <button
+                    key={lvl}
+                    className={`dbar-btn dbar-${lvl}${difficulty === lvl ? ' active' : ''}`}
+                    onClick={() => setDifficulty(lvl)}
+                  >
+                    <span className="dbar-icon">
+                      {lvl === 'beginner' ? '\u265f' : lvl === 'professional' ? '\u265e' : '\u2654'}
+                    </span>
+                    <span className="dbar-txt">
+                      <span className="dbar-label">
+                        {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
+                      </span>
+                      <span className="dbar-sub">
+                        {mode === 'ai'
+                          ? lvl === 'beginner' ? 'Depth 1' : lvl === 'professional' ? 'Depth 2' : 'Depth 3'
+                          : lvl === 'beginner' ? '~700 ELO' : lvl === 'professional' ? '~1800 ELO' : '2500+ ELO'}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="diff-bar-btns">
-              {LEVELS.map(lvl => (
-                <button
-                  key={lvl.id}
-                  className={`dbar-btn dbar-${lvl.id}${difficulty === lvl.id ? ' active' : ''}`}
-                  onClick={() => setDifficulty(lvl.id)}
-                >
-                  <span className="dbar-icon">{lvl.icon}</span>
-                  <span className="dbar-txt">
-                    <span className="dbar-label">{lvl.label}</span>
-                    <span className="dbar-sub">{lvl.sub}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )
-      })()}
-          }
+          )}
         </div>
 
         {/* RIGHT */}
@@ -1482,6 +1473,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 `
+
 
 
 
