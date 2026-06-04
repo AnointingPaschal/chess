@@ -27,12 +27,10 @@ interface ChatMsg {
   verified?: boolean; hash?: string
 }
 
-interface Settings { apiKey: string; model: string }
+interface Settings { model: string }
 interface GameResult { over: boolean; winner: Color | null; reason: string | null }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const STORAGE_KEY = 'ritual-chess-admin'
 
 const PVAL: Record<string, number> = { K:20000,Q:900,R:500,B:330,N:320,P:100 }
 const PST: Record<string, number[]> = {
@@ -353,25 +351,21 @@ function fakeHash(): string {
   return '0x'+Array.from({length:64},()=>h[Math.floor(Math.random()*16)]).join('')
 }
 
-async function callLLM(system: string, user: string, settings: Settings): Promise<string> {
-  if (!settings.apiKey || !settings.model) throw new Error('NO_CONFIG')
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+async function callLLM(system: string, user: string, model: string): Promise<string> {
+  const res = await fetch('/api/llm', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${settings.apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://chess.ritual',
-      'X-Title': 'Chess on Ritual'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: settings.model,
-      messages: [{role:'system',content:system},{role:'user',content:user}],
-      max_tokens: 700
-    })
+      model,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user',   content: user },
+      ],
+    }),
   })
-  const data = await res.json()
-  if (data.error) throw new Error(data.error.message ?? 'API error')
-  return data.choices[0].message.content as string
+  const data = await res.json() as { content?: string; error?: string }
+  if (data.error) throw new Error(data.error)
+  return data.content!
 }
 
 function mdToHtml(t: string): string {
@@ -405,7 +399,7 @@ export default function IndexPage() {
   const [chatBusy,  setChatBusy]  = useState(false)
 
   // ── Settings (read from localStorage) ──
-  const [settings, setSettings] = useState<Settings>({apiKey:'',model:''})
+  const [settings, setSettings] = useState<Settings>({model:''})
 
   // ── Wallet ──
   const [walletAddr,    setWalletAddr]    = useState('')
@@ -420,10 +414,18 @@ export default function IndexPage() {
 
   // ── Load settings ──
   useEffect(() => {
-    try {
-      const s = localStorage.getItem(STORAGE_KEY)
-      if (s) { const p=JSON.parse(s); setSettings({apiKey:p.apiKey??'',model:p.model??''}) }
-    } catch {}
+    // Load active model from localStorage, fallback to /api/config
+    const local = localStorage.getItem('ritual-active-model')
+    if (local) {
+      setSettings({ model: local })
+    } else {
+      fetch('/api/config')
+        .then(r => r.json())
+        .then((d: { defaultModel?: string }) => {
+          if (d.defaultModel) setSettings({ model: d.defaultModel })
+        })
+        .catch(() => {})
+    }
   }, [])
 
   // ── Timer ──
@@ -484,11 +486,11 @@ export default function IndexPage() {
     setTimers({w:600,b:600}); setOverlayOpen(false); setPaygateOpen(false)
     const greet = m==='llm'
       ? settings.model
-        ? `New game vs Ritual LLM (${settings.model.split('/').pop()}). I am playing Black — ask me anything!`
-        : 'No model configured. Visit /admin to set your OpenRouter API key and model.'
-      : 'New game started. Ask me about any position mid-game!'
+        ? `New game — I'm playing Black. Ask me anything about the position!`
+        : `New game! AI analysis is available — ask me about the position.`
+      : 'New game started! Ask me about any position.'
     setChat([{id:'0',role:'llm',text:greet,verified:false}])
-    if (m==='llm' && (!settings.apiKey||!settings.model)) showToast('⚠ Visit /admin to configure LLM')
+    if (m==='llm' && !settings.model) showToast('AI service starting…')
   }
 
   function requestGame(m: GameMode) { setPendingMode(m); setPaygateOpen(true) }
@@ -531,7 +533,7 @@ export default function IndexPage() {
     const system=`You are a strong chess engine playing as Black. Respond with ONLY a single UCI move from the legal moves list. Nothing else.`
     const user=`FEN: ${toFEN(gs)}\nMoves so far: ${pgn}\nLegal: ${uciList.join(', ')}\n\nBest move for Black:`
     try {
-      const raw=await callLLM(system,user,settings)
+      const raw=await callLLM(system,user,settings.model)
       const cleaned=raw.trim().toLowerCase().replace(/[^a-h1-8qrbnkp]/g,' ').trim().split(/\s+/)[0]??''
       const idx=uciList.findIndex(u=>u.toLowerCase()===cleaned||u.toLowerCase().startsWith(cleaned.slice(0,4)))
       const chosen=idx>=0?uciList[idx]:uciList[Math.floor(Math.random()*uciList.length)]
@@ -551,7 +553,7 @@ export default function IndexPage() {
       }
     } catch(e: unknown) {
       const msg=e instanceof Error?e.message:String(e)
-      if (msg==='NO_CONFIG') showToast('Visit /admin to configure LLM')
+      if (msg==='NO_CONFIG'||msg==='NO_MODEL') showToast('AI service not available')
       else { showToast('LLM error — using engine fallback'); setGs(prev=>{const best=findBestMove(prev,2);return execMove(prev,best)??prev}) }
     } finally { setLlmThink(false) }
   }
@@ -561,8 +563,8 @@ export default function IndexPage() {
     const msg=chatInput.trim(); if (!msg||chatBusy) return
     setChatInput(''); setChatBusy(true)
     setChat(prev=>[...prev,{id:Date.now()+'',role:'user',text:msg},{id:Date.now()+'t',role:'llm',text:'',thinking:true}])
-    if (!settings.apiKey||!settings.model) {
-      setChat(prev=>prev.filter(m=>!m.thinking).concat({id:Date.now()+'',role:'llm',text:'Visit **/admin** to configure your API key and model.'}))
+    if (!settings.model) {
+      setChat(prev=>prev.filter(m=>!m.thinking).concat({id:Date.now()+'',role:'llm',text:'AI analysis is currently unavailable.'}))
       setChatBusy(false); return
     }
     const fen=toFEN(gs)
@@ -570,12 +572,12 @@ export default function IndexPage() {
     const system=`You are the Ritual LLM, a chess analysis AI on the Ritual blockchain (Chain 1979). Provide concise, sharp chess insights in 2-4 sentences. Use chess notation freely. Never say you are Claude or made by Anthropic.`
     const user=`FEN: ${fen}\nMoves: ${pgn}\n${gs.turn==='w'?'White':'Black'} to move.\n\nQuestion: ${msg}`
     try {
-      const resp=await callLLM(system,user,settings)
+      const resp=await callLLM(system,user,settings.model)
       const hash=fakeHash()
       setChat(prev=>prev.filter(m=>!m.thinking).concat({id:Date.now()+'',role:'llm',text:resp,verified:true,hash:hash.slice(0,16)+'…'}))
     } catch(e: unknown) {
       const msg2=e instanceof Error?e.message:String(e)
-      setChat(prev=>prev.filter(m=>!m.thinking).concat({id:Date.now()+'',role:'llm',text:msg2==='NO_CONFIG'?'Visit /admin to set up your OpenRouter API key.':'Analysis unavailable: '+msg2}))
+      setChat(prev=>prev.filter(m=>!m.thinking).concat({id:Date.now()+'',role:'llm',text:'Analysis unavailable. Please try again.'}))
     } finally { setChatBusy(false) }
   }
 
@@ -591,7 +593,6 @@ export default function IndexPage() {
 
   // ── Board helpers ──
   const inCheck = !over && gs.turn && (() => { const ks=kingSq(gs.board,gs.turn); return ks!==-1 && attacked(gs.board,ks,gs.turn==='w'?'b':'w') })()
-  const modelShort = settings.model ? settings.model.split('/').pop() : null
 
   function statusMsg(): string {
     if (over) return 'Game Over'
@@ -621,8 +622,7 @@ export default function IndexPage() {
         </div>
         <div className="hdr-right">
           <div className="chain-pill"><span className="chain-dot"/><span>Ritual · 1979</span></div>
-          {modelShort && <div className="model-pill">⚡ {modelShort}</div>}
-          <a href="/admin" className="hdr-btn">⚙ Admin</a>
+          
           <button className="hdr-btn primary" onClick={connectWallet}>
             {walletConn ? `${walletAddr.slice(0,6)}…${walletAddr.slice(-4)}` : 'Connect Wallet'}
           </button>
@@ -776,7 +776,7 @@ export default function IndexPage() {
                 <div className="contract-meta">
                   <span><b>Entry fee:</b> 0.01 ritual</span>
                   <span><b>Chain:</b> Ritual · 1979</span>
-                  <span><b>LLM:</b> OpenRouter · on-chain</span>
+                  <span><b>AI:</b> Ritual · on-chain</span>
                 </div>
               </div>
             </>
@@ -793,7 +793,7 @@ export default function IndexPage() {
               <div>
                 <div className="chat-title">Ritual LLM</div>
                 <div className="chat-subtitle">
-                  {modelShort ? modelShort : 'No model — configure in Admin'}
+                  Verifiable On-Chain Inference
                 </div>
               </div>
             </div>
