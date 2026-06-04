@@ -415,6 +415,14 @@ function fakeHash(): string {
 }
 
 
+// ── Difficulty → computer search depth (LLM always outclasses equiv computer level) ──
+const COMPUTER_DEPTH: Record<LlmDifficulty, number> = {
+  beginner:     1,   // random-ish, depth-1 scan   (~300–500 ELO)
+  professional: 2,   // 2-ply + PST              (~800–1100 ELO)
+  master:       3,   // iterative deepening 3     (~1200–1500 ELO)
+}
+// LLM Beginner (~700), Professional (~1800), Master (2500+) all exceed computer equivalents.
+
 // ── LLM Difficulty Training Prompts ──────────────────────────────────────────
 
 function getLlmPrompt(diff: LlmDifficulty): string {
@@ -578,12 +586,11 @@ function ChessApp() {
   const [sel,     setSel]     = useState<number|null>(null)
   const [legalM,  setLegalM]  = useState<ChessMove[]>([])
   const [mode,    setMode]    = useState<GameMode>('ai')
-  const [llmDiff, setLlmDiff] = useState<LlmDifficulty>('professional')
+  const [difficulty, setDifficulty] = useState<LlmDifficulty>('professional')
   const [active,  setActive]  = useState(false)
   const [over,    setOver]    = useState(false)
   const [result,  setResult]  = useState<GameResult>({over:false,winner:null,reason:null})
   const [flipped, setFlipped] = useState(false)
-  const [depth,   setDepth]   = useState(2)
   const [timers,  setTimers]  = useState({w:600,b:600})
   const [toast,   setToast]   = useState<string|null>(null)
   const [llmThink,setLlmThink]= useState(false)
@@ -648,21 +655,21 @@ function ChessApp() {
     if (mode==='ai') {
       const t=setTimeout(()=>{
         setGs(prev => {
-          const best=findBestMove(prev,depth)
+          const best=findBestMove(prev,COMPUTER_DEPTH[difficulty])
           const next=execMove(prev,best)
           if (!next) return prev
           const r=gameResult(next)
           if (r.over) { setOver(true); setActive(false); setResult(r); setOverlayOpen(true) }
           return next
         })
-      }, AI_DELAY[depth]??700)
+      }, AI_DELAY[COMPUTER_DEPTH[difficulty]]??700)
       return ()=>clearTimeout(t)
     }
     if (mode==='llm') {
       const t=setTimeout(()=>doLlmMove(), 500)
       return ()=>clearTimeout(t)
     }
-  }, [gs.turn, mode, active, over, depth])
+  }, [gs.turn, mode, active, over, difficulty])
 
   // ── Auto-scroll chat ──
   useEffect(() => { chatEndRef.current?.scrollIntoView({behavior:'smooth'}) }, [chat])
@@ -778,8 +785,8 @@ function ChessApp() {
     setLlmThink(true)
     const uciList=movesToUCI(gs)
     const pgn=gs.moveHistory.map(m=>m.color==='w'?`${m.num}. ${m.san}`:m.san).join(' ')||'(opening)'
-    const system = getLlmPrompt(llmDiff)
-    const diffLabel = llmDiff === 'beginner' ? 'Beginner' : llmDiff === 'master' ? 'Master' : 'Professional'
+    const system = getLlmPrompt(difficulty)
+    const diffLabel = difficulty === 'beginner' ? 'Beginner' : difficulty === 'master' ? 'Master' : 'Professional'
     const user=`FEN: ${toFEN(gs)}\nMoves so far: ${pgn}\nLegal moves: ${uciList.join(', ')}\nYou are playing as: Black (${diffLabel} level)\n\nSelect your move:`
     try {
       const raw=await callLLM(system,user,settings.model)
@@ -814,7 +821,7 @@ function ChessApp() {
     } catch(e: unknown) {
       const msg=e instanceof Error?e.message:String(e)
       if (msg==='NO_CONFIG'||msg==='NO_MODEL') showToast('AI service not available')
-      else { showToast('LLM error — using engine fallback'); setGs(prev=>{const best=findBestMove(prev,2);return execMove(prev,best)??prev}) }
+      else { showToast('LLM error — using engine fallback'); setGs(prev=>{const best=findBestMove(prev,COMPUTER_DEPTH[difficulty]);return execMove(prev,best)??prev}) }
     } finally { setLlmThink(false) }
   }
 
@@ -938,45 +945,46 @@ Provide winning strategies, pinpoint tactical blunders, and give clear, actionab
             <button className="btn btn-red" onClick={resign}>⚑ Resign</button>
             <button className="btn btn-outline last" onClick={()=>setFlipped(f=>!f)}>⇅ Flip Board</button>
           </div>
-          <div className="card">
-            <div className="card-title">Computer Difficulty</div>
-            <div className="diff-row">
-              {[1,2,3,4].map(d=>(
-                <button key={d} className={`diff-btn${depth===d?' active':''}`} onClick={()=>setDepth(d)}>
-                  {['Pawn','Knight','Bishop','King'][d-1]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="card llm-diff-card">
-            <div className="card-title">Ritual LLM Level</div>
-            <div className="llm-diff-list">
-              {([
-                { id:'beginner',     icon:'♟', label:'Beginner',     elo:'~700 ELO',  desc:'Makes human mistakes, misses threats' },
-                { id:'professional', icon:'♞', label:'Professional',  elo:'~1800 ELO', desc:'Solid principles, avoids blunders' },
-                { id:'master',       icon:'♔', label:'Master',        elo:'2500+ ELO', desc:'Deep calculation, near-perfect play' },
-              ] as { id:LlmDifficulty; icon:string; label:string; elo:string; desc:string }[]).map(lvl=>(
-                <button
-                  key={lvl.id}
-                  className={`llm-diff-btn llm-${lvl.id}${llmDiff===lvl.id?' active':''}`}
-                  onClick={()=>setLlmDiff(lvl.id)}
-                >
-                  <span className="ldiff-icon">{lvl.icon}</span>
-                  <span className="ldiff-body">
-                    <span className="ldiff-label">{lvl.label}</span>
-                    <span className="ldiff-elo">{lvl.elo}</span>
-                    <span className="ldiff-desc">{lvl.desc}</span>
-                  </span>
-                  {llmDiff===lvl.id && <span className="ldiff-check">✓</span>}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* BOARD */}
         <div className="board-col">
+          {/* Above board = opponent side when NOT flipped */}
+          {!flipped &&
+      {/* ── Difficulty Bar — always on the opponent's side of the board ── */}
+      {(mode === 'ai' || mode === 'llm') && (() => {
+        const LEVELS = [
+          { id: 'beginner'    as LlmDifficulty, icon: '♟', label: 'Beginner',
+            sub: mode==='ai' ? 'Depth 1' : '~700 ELO' },
+          { id: 'professional'as LlmDifficulty, icon: '♞', label: 'Professional',
+            sub: mode==='ai' ? 'Depth 2' : '~1800 ELO' },
+          { id: 'master'      as LlmDifficulty, icon: '♔', label: 'Master',
+            sub: mode==='ai' ? 'Depth 3' : '2500+ ELO' },
+        ]
+        return (
+          <div className="diff-bar">
+            <div className="diff-bar-label">
+              {mode === 'ai' ? '🖥 Computer' : '⚡ Ritual LLM'}
+            </div>
+            <div className="diff-bar-btns">
+              {LEVELS.map(lvl => (
+                <button
+                  key={lvl.id}
+                  className={`dbar-btn dbar-${lvl.id}${difficulty === lvl.id ? ' active' : ''}`}
+                  onClick={() => setDifficulty(lvl.id)}
+                >
+                  <span className="dbar-icon">{lvl.icon}</span>
+                  <span className="dbar-txt">
+                    <span className="dbar-label">{lvl.label}</span>
+                    <span className="dbar-sub">{lvl.sub}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+          }
           <div className="board-outer">
             <div className="board">
               {Array.from({length:64},(_,vi)=>{
@@ -1018,6 +1026,42 @@ Provide winning strategies, pinpoint tactical blunders, and give clear, actionab
             </div>
             <span className="move-count">Move {gs.fullMove}</span>
           </div>
+          {/* Below board = opponent side when flipped */}
+          {flipped &&
+      {/* ── Difficulty Bar — always on the opponent's side of the board ── */}
+      {(mode === 'ai' || mode === 'llm') && (() => {
+        const LEVELS = [
+          { id: 'beginner'    as LlmDifficulty, icon: '♟', label: 'Beginner',
+            sub: mode==='ai' ? 'Depth 1' : '~700 ELO' },
+          { id: 'professional'as LlmDifficulty, icon: '♞', label: 'Professional',
+            sub: mode==='ai' ? 'Depth 2' : '~1800 ELO' },
+          { id: 'master'      as LlmDifficulty, icon: '♔', label: 'Master',
+            sub: mode==='ai' ? 'Depth 3' : '2500+ ELO' },
+        ]
+        return (
+          <div className="diff-bar">
+            <div className="diff-bar-label">
+              {mode === 'ai' ? '🖥 Computer' : '⚡ Ritual LLM'}
+            </div>
+            <div className="diff-bar-btns">
+              {LEVELS.map(lvl => (
+                <button
+                  key={lvl.id}
+                  className={`dbar-btn dbar-${lvl.id}${difficulty === lvl.id ? ' active' : ''}`}
+                  onClick={() => setDifficulty(lvl.id)}
+                >
+                  <span className="dbar-icon">{lvl.icon}</span>
+                  <span className="dbar-txt">
+                    <span className="dbar-label">{lvl.label}</span>
+                    <span className="dbar-sub">{lvl.sub}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+          }
         </div>
 
         {/* RIGHT */}
@@ -1272,36 +1316,29 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 .diff-btn.active{background:var(--ink);color:var(--gold);border-color:var(--ink)}
 
 
-/* LLM Difficulty Card */
-.llm-diff-card { padding-bottom: 12px; }
-.llm-diff-list { display: flex; flex-direction: column; gap: 6px; }
 
-.llm-diff-btn {
-  display: flex; align-items: center; gap: 10px;
-  width: 100%; padding: 10px 12px;
-  border: 1px solid var(--border); border-radius: 10px;
-  background: var(--bg2); cursor: pointer;
-  transition: all .18s; text-align: left; position: relative;
-}
-.llm-diff-btn:hover { border-color: var(--border2); background: var(--bg3); }
 
-/* active states per level */
-.llm-diff-btn.llm-beginner.active  { background: rgba(45,122,79,.08); border-color: var(--green); box-shadow: 0 0 0 2px rgba(45,122,79,.12); }
-.llm-diff-btn.llm-professional.active { background: var(--gold-bg); border-color: var(--gold); box-shadow: 0 0 0 2px rgba(212,175,55,.15); }
-.llm-diff-btn.llm-master.active    { background: var(--ink); border-color: var(--ink); box-shadow: 0 0 0 2px rgba(26,22,16,.25); }
-.llm-diff-btn.llm-master.active .ldiff-label,
-.llm-diff-btn.llm-master.active .ldiff-elo,
-.llm-diff-btn.llm-master.active .ldiff-desc { color: rgba(212,175,55,.9); }
-.llm-diff-btn.llm-master.active .ldiff-icon { color: var(--gold); }
-.llm-diff-btn.llm-master.active .ldiff-check { color: var(--gold); }
 
-.ldiff-icon { font-size: 20px; flex-shrink: 0; width: 26px; text-align: center; }
-.ldiff-body { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
-.ldiff-label { font-family: 'Playfair Display', serif; font-size: 13px; font-weight: 700; color: var(--ink); line-height: 1.2; }
-.ldiff-elo   { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--gold2); font-weight: 500; }
-.ldiff-desc  { font-size: 10px; color: var(--ink3); line-height: 1.3; margin-top: 1px; }
-.ldiff-check { font-size: 13px; font-weight: 700; flex-shrink: 0; color: var(--green); }
-.llm-diff-btn.llm-master.active .ldiff-elo { color: var(--gold); }
+/* ── Difficulty Bar (horizontal, follows opponent side of board) ── */
+.diff-bar{display:flex;align-items:center;gap:8px;width:min(504px,88vw);padding:8px 0}
+.diff-bar-label{font-family:'DM Sans',sans-serif;font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.06em;white-space:nowrap;flex-shrink:0;min-width:80px;text-align:right;padding-right:10px;border-right:1px solid var(--border)}
+.diff-bar-btns{display:flex;gap:5px;flex:1}
+.dbar-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 4px;border:1px solid var(--border);border-radius:9px;background:var(--bg);cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif}
+.dbar-btn:hover{background:var(--bg2);border-color:var(--border2)}
+.dbar-icon{font-size:15px;flex-shrink:0;line-height:1}
+.dbar-txt{display:flex;flex-direction:column;align-items:flex-start;gap:0}
+.dbar-label{font-size:11px;font-weight:700;color:var(--ink);line-height:1.2}
+.dbar-sub{font-family:'DM Mono',monospace;font-size:9px;color:var(--ink3);line-height:1.3}
+.dbar-btn.active.dbar-beginner{background:rgba(45,122,79,.1);border-color:var(--green)}
+.dbar-btn.active.dbar-beginner .dbar-label{color:var(--green)}
+.dbar-btn.active.dbar-beginner .dbar-icon,.dbar-btn.active.dbar-beginner .dbar-sub{color:rgba(45,122,79,.75)}
+.dbar-btn.active.dbar-professional{background:var(--gold-bg);border-color:var(--gold)}
+.dbar-btn.active.dbar-professional .dbar-label{color:var(--gold2)}
+.dbar-btn.active.dbar-professional .dbar-icon,.dbar-btn.active.dbar-professional .dbar-sub{color:rgba(170,133,41,.75)}
+.dbar-btn.active.dbar-master{background:var(--ink);border-color:var(--ink)}
+.dbar-btn.active.dbar-master .dbar-label{color:var(--gold)}
+.dbar-btn.active.dbar-master .dbar-icon{color:var(--gold)}
+.dbar-btn.active.dbar-master .dbar-sub{color:rgba(212,175,55,.5)}
 
 /* ═══ Realistic Chess Board ═══ */
 .board-col{display:flex;flex-direction:column;align-items:center}
@@ -1445,6 +1482,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 `
+
 
 
 
