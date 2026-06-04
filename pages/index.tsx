@@ -838,7 +838,7 @@ function ChessApp() {
     const pgn=gs.moveHistory.map(m=>m.color==='w'?`${m.num}. ${m.san}`:m.san).join(' ')||'(no moves yet)'
     
     // Updated System Prompt with Greeting instructions & plain English constraints
-    const chatPersonality = mode==='llm' && llmDiff==='beginner' ? 'casual, friendly beginner player who is still learning' : mode==='llm' && llmDiff==='master' ? 'grandmaster-level analyst who speaks precisely about deep tactics and strategy' : 'strong club-level chess player who gives solid, practical advice'
+    const chatPersonality = mode==='llm' && difficulty==='beginner' ? 'casual, friendly beginner player who is still learning' : mode==='llm' && difficulty==='master' ? 'grandmaster-level analyst who speaks precisely about deep tactics and strategy' : 'strong club-level chess player who gives solid, practical advice'
     const system=`You are a ${chatPersonality} embedded in Chess on Ritual.
 CRITICAL INSTRUCTION 1: If the user greets you (e.g., 'hi', 'hello', 'welcome'), respond warmly to the greeting FIRST and ask what they would love you to do or how you can assist them today, before offering any unprompted analysis.
 CRITICAL INSTRUCTION 2: Use simple, plain English. AVOID using grid coordinates (like "e4" or "Nf3") whenever possible. 
@@ -1482,6 +1482,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 `
+
 
 
 
