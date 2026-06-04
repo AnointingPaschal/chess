@@ -42,6 +42,7 @@ const queryClient = new QueryClient();
 type Color    = 'w' | 'b'
 type Board    = (string | null)[]
 type GameMode = 'ai' | 'llm' | 'human'
+type LlmDifficulty = 'beginner' | 'professional' | 'master'
 
 interface ChessMove {
   from: number; to: number; prom?: string
@@ -413,6 +414,123 @@ function fakeHash(): string {
   return '0x'+Array.from({length:64},()=>h[Math.floor(Math.random()*16)]).join('')
 }
 
+
+// ── LLM Difficulty Training Prompts ──────────────────────────────────────────
+
+function getLlmPrompt(diff: LlmDifficulty): string {
+  if (diff === 'beginner') return `
+You are playing chess as Black at BEGINNER level (~700 ELO). You must behave exactly
+like an inexperienced, nervous human player who is still learning the game.
+
+OPENING PHASE (moves 1-12) — make these typical beginner errors:
+• Bring your queen out on move 2 or 3 (e.g. Qh4, Qa5) and let it get chased around
+• Move the same piece two or three times before developing the others
+• Push wing pawns (a, b, g, h) instead of controlling the center
+• Do NOT castle — leave your king stuck in the center
+• Block your own bishops by pushing the pawns in front of them
+
+TACTICAL BLINDNESS — simulate not seeing threats:
+• Leave pieces undefended (hanging) even when the opponent can simply take them
+• Miss forks, pins, and skewers completely
+• Capture pieces impulsively even when it loses material (e.g. take a pawn with your queen when she'll be captured back)
+• Move a piece into an attacked square without noticing
+• Ignore checks or threats that require more than one move to see
+
+THOUGHT PROCESS:
+• You look ahead 0–1 moves only
+• You react to the very last move played, nothing more
+• You prefer moves that "look active" or aggressive even when they lose material
+• You get excited by advancing pawns to the opponent's side
+• You do not think about pawn structure, weak squares, or piece activity
+
+CRITICAL MOVE SELECTION RULE:
+From the legal moves list you will receive, you MUST pick a WEAK or MEDIOCRE move —
+not the best move. Prefer: a wing pawn advance, a piece retreating to the edge
+(a-file or h-file), a premature queen move, or any capture that loses material.
+NEVER castle, NEVER play a move that requires tactical calculation.
+Respond with ONLY the UCI move string — nothing else.`.trim()
+
+  if (diff === 'master') return `
+You are playing chess as Black at GRANDMASTER level (2500+ ELO). You must find and
+play the single objectively best move in the position.
+
+CALCULATION — go deep before deciding:
+• Calculate all forcing lines: checks, captures, and threats at least 5–7 moves ahead
+• Verify your chosen move has no tactical refutation (opponent's best reply and your reply to that)
+• Consider candidate moves in order: forcing moves first, then positional improvements
+• Look for zwischenzug (in-between moves) that change the evaluation
+
+POSITIONAL MASTERY:
+• Identify and target weak squares — especially those your opponent's pawns can no longer defend
+• Place knights on outposts deep in enemy territory (d4, e4, c5, f5 for Black)
+• Exploit backward pawns, isolated pawns, and pawn islands aggressively
+• Seize open and half-open files with rooks immediately
+• Trade off your bad pieces (bishop blocked by own pawns) for opponent's good pieces
+• Connect and activate rooks before the endgame — doubled rooks on open file win games
+
+STRATEGIC PLANNING:
+• Always have a concrete multi-move plan based on the position's static features
+• Think prophylactically: before executing your plan, ask "what is my opponent trying to do?" and stop it
+• In imbalanced positions (material vs activity), calculate precisely — don't rely on intuition
+• Know the transition point: when your advantage is large enough, simplify into a winning endgame
+
+DYNAMIC PLAY & INITIATIVE:
+• Seize and maintain the initiative with threats that demand responses
+• Consider piece sacrifices that yield: open lines to the king, permanent weak squares, or decisive passed pawns
+• Restrict your opponent's most active piece — a knight with no good squares is worth far less than its nominal value
+• Time pawn breaks precisely (e.g. ...d5, ...e5, ...f5) to change the pawn structure in your favour
+
+ENDGAME PRECISION:
+• King activity is paramount — march the king to the center the moment queens come off
+• Create and advance passed pawns; two connected passers on the 6th rank beat a rook
+• Know Lucena (building a bridge) and Philidor (drawing with rook) positions
+• Convert small material advantages without allowing drawing chances
+
+CRITICAL MOVE SELECTION RULE:
+From the legal moves list, select the single move a world-class engine or champion
+would choose. Prioritise the move that: maximises piece activity, creates the most
+concrete threats, improves your worst-placed piece, or exploits a specific positional
+or tactical weakness. Respond with ONLY the UCI move string — nothing else.`.trim()
+
+  // professional (default)
+  return `
+You are playing chess as Black at PROFESSIONAL club level (~1800 ELO). You play
+principled, solid chess — not perfect, but strong and consistent.
+
+OPENING PRINCIPLES (strictly follow these):
+• Control the center with d5 or e5 as early as possible
+• Develop all minor pieces (knights before bishops) before move 10
+• Castle kingside for safety within the first 10 moves
+• Do NOT move the same piece twice unless there is a concrete tactical reason
+• Do NOT bring the queen out early — she gets chased and loses time
+
+TACTICAL AWARENESS — you reliably see:
+• One-move and two-move combinations: forks, pins, skewers, discovered attacks
+• Hanging pieces (yours and opponent's) — never leave a piece undefended
+• Simple back-rank mate threats
+• Pawn promotion threats in the endgame
+You occasionally miss deep 4–5 move tactical sequences involving multiple sacrifices.
+
+POSITIONAL UNDERSTANDING:
+• Place rooks on open or half-open files
+• Put knights on stable squares not attacked by opponent pawns
+• Avoid creating weak pawns (isolated, doubled, backward) without compensation
+• When ahead in material, exchange pieces to simplify into a winning endgame
+• Keep pieces active — a passive piece is a liability
+
+MIDDLEGAME PLANS:
+• After castling, look for pawn breaks that open lines for your pieces
+• Create and target a specific weakness in the opponent's camp
+• Coordinate your pieces toward the same area of the board
+• If you have the bishop pair, open the position; if knights, keep it closed
+
+CRITICAL MOVE SELECTION RULE:
+From the legal moves list, pick a GOOD, principled move that a strong club player
+would be proud of. Avoid obvious blunders. Prefer moves that follow the guidelines
+above. You do not need to find the absolute best computer move — a logical, solid
+choice is sufficient. Respond with ONLY the UCI move string — nothing else.`.trim()
+}
+
 async function callLLM(system: string, user: string, model: string): Promise<string> {
   const res = await fetch('/api/llm', {
     method: 'POST',
@@ -460,6 +578,7 @@ function ChessApp() {
   const [sel,     setSel]     = useState<number|null>(null)
   const [legalM,  setLegalM]  = useState<ChessMove[]>([])
   const [mode,    setMode]    = useState<GameMode>('ai')
+  const [llmDiff, setLlmDiff] = useState<LlmDifficulty>('professional')
   const [active,  setActive]  = useState(false)
   const [over,    setOver]    = useState(false)
   const [result,  setResult]  = useState<GameResult>({over:false,winner:null,reason:null})
@@ -659,8 +778,9 @@ function ChessApp() {
     setLlmThink(true)
     const uciList=movesToUCI(gs)
     const pgn=gs.moveHistory.map(m=>m.color==='w'?`${m.num}. ${m.san}`:m.san).join(' ')||'(opening)'
-    const system=`You are a strong chess engine playing as Black. Respond with ONLY a single UCI move from the legal moves list. Nothing else.`
-    const user=`FEN: ${toFEN(gs)}\nMoves so far: ${pgn}\nLegal: ${uciList.join(', ')}\n\nBest move for Black:`
+    const system = getLlmPrompt(llmDiff)
+    const diffLabel = llmDiff === 'beginner' ? 'Beginner' : llmDiff === 'master' ? 'Master' : 'Professional'
+    const user=`FEN: ${toFEN(gs)}\nMoves so far: ${pgn}\nLegal moves: ${uciList.join(', ')}\nYou are playing as: Black (${diffLabel} level)\n\nSelect your move:`
     try {
       const raw=await callLLM(system,user,settings.model)
       const cleaned=raw.trim().toLowerCase().replace(/[^a-h1-8qrbnkp]/g,' ').trim().split(/\s+/)[0]??''
@@ -711,7 +831,8 @@ function ChessApp() {
     const pgn=gs.moveHistory.map(m=>m.color==='w'?`${m.num}. ${m.san}`:m.san).join(' ')||'(no moves yet)'
     
     // Updated System Prompt with Greeting instructions & plain English constraints
-    const system=`You are an elite, grandmaster-level chess coach and analyst.
+    const chatPersonality = mode==='llm' && llmDiff==='beginner' ? 'casual, friendly beginner player who is still learning' : mode==='llm' && llmDiff==='master' ? 'grandmaster-level analyst who speaks precisely about deep tactics and strategy' : 'strong club-level chess player who gives solid, practical advice'
+    const system=`You are a ${chatPersonality} embedded in Chess on Ritual.
 CRITICAL INSTRUCTION 1: If the user greets you (e.g., 'hi', 'hello', 'welcome'), respond warmly to the greeting FIRST and ask what they would love you to do or how you can assist them today, before offering any unprompted analysis.
 CRITICAL INSTRUCTION 2: Use simple, plain English. AVOID using grid coordinates (like "e4" or "Nf3") whenever possible. 
 Instead, describe pieces by their location or role (e.g., "your King's pawn", "the right Knight", "move your Bishop to control the long diagonal").
@@ -818,11 +939,36 @@ Provide winning strategies, pinpoint tactical blunders, and give clear, actionab
             <button className="btn btn-outline last" onClick={()=>setFlipped(f=>!f)}>⇅ Flip Board</button>
           </div>
           <div className="card">
-            <div className="card-title">Difficulty</div>
+            <div className="card-title">Computer Difficulty</div>
             <div className="diff-row">
               {[1,2,3,4].map(d=>(
                 <button key={d} className={`diff-btn${depth===d?' active':''}`} onClick={()=>setDepth(d)}>
                   {['Pawn','Knight','Bishop','King'][d-1]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="card llm-diff-card">
+            <div className="card-title">Ritual LLM Level</div>
+            <div className="llm-diff-list">
+              {([
+                { id:'beginner',     icon:'♟', label:'Beginner',     elo:'~700 ELO',  desc:'Makes human mistakes, misses threats' },
+                { id:'professional', icon:'♞', label:'Professional',  elo:'~1800 ELO', desc:'Solid principles, avoids blunders' },
+                { id:'master',       icon:'♔', label:'Master',        elo:'2500+ ELO', desc:'Deep calculation, near-perfect play' },
+              ] as { id:LlmDifficulty; icon:string; label:string; elo:string; desc:string }[]).map(lvl=>(
+                <button
+                  key={lvl.id}
+                  className={`llm-diff-btn llm-${lvl.id}${llmDiff===lvl.id?' active':''}`}
+                  onClick={()=>setLlmDiff(lvl.id)}
+                >
+                  <span className="ldiff-icon">{lvl.icon}</span>
+                  <span className="ldiff-body">
+                    <span className="ldiff-label">{lvl.label}</span>
+                    <span className="ldiff-elo">{lvl.elo}</span>
+                    <span className="ldiff-desc">{lvl.desc}</span>
+                  </span>
+                  {llmDiff===lvl.id && <span className="ldiff-check">✓</span>}
                 </button>
               ))}
             </div>
@@ -1125,6 +1271,38 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 .diff-btn{flex:1;font-family:'DM Sans',sans-serif;font-size:10px;font-weight:600;padding:6px 4px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--ink3);cursor:pointer;transition:all .15s}
 .diff-btn.active{background:var(--ink);color:var(--gold);border-color:var(--ink)}
 
+
+/* LLM Difficulty Card */
+.llm-diff-card { padding-bottom: 12px; }
+.llm-diff-list { display: flex; flex-direction: column; gap: 6px; }
+
+.llm-diff-btn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg2); cursor: pointer;
+  transition: all .18s; text-align: left; position: relative;
+}
+.llm-diff-btn:hover { border-color: var(--border2); background: var(--bg3); }
+
+/* active states per level */
+.llm-diff-btn.llm-beginner.active  { background: rgba(45,122,79,.08); border-color: var(--green); box-shadow: 0 0 0 2px rgba(45,122,79,.12); }
+.llm-diff-btn.llm-professional.active { background: var(--gold-bg); border-color: var(--gold); box-shadow: 0 0 0 2px rgba(212,175,55,.15); }
+.llm-diff-btn.llm-master.active    { background: var(--ink); border-color: var(--ink); box-shadow: 0 0 0 2px rgba(26,22,16,.25); }
+.llm-diff-btn.llm-master.active .ldiff-label,
+.llm-diff-btn.llm-master.active .ldiff-elo,
+.llm-diff-btn.llm-master.active .ldiff-desc { color: rgba(212,175,55,.9); }
+.llm-diff-btn.llm-master.active .ldiff-icon { color: var(--gold); }
+.llm-diff-btn.llm-master.active .ldiff-check { color: var(--gold); }
+
+.ldiff-icon { font-size: 20px; flex-shrink: 0; width: 26px; text-align: center; }
+.ldiff-body { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.ldiff-label { font-family: 'Playfair Display', serif; font-size: 13px; font-weight: 700; color: var(--ink); line-height: 1.2; }
+.ldiff-elo   { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--gold2); font-weight: 500; }
+.ldiff-desc  { font-size: 10px; color: var(--ink3); line-height: 1.3; margin-top: 1px; }
+.ldiff-check { font-size: 13px; font-weight: 700; flex-shrink: 0; color: var(--green); }
+.llm-diff-btn.llm-master.active .ldiff-elo { color: var(--gold); }
+
 /* ═══ Realistic Chess Board ═══ */
 .board-col{display:flex;flex-direction:column;align-items:center}
 .board-outer{display:flex;align-items:center;gap:0;margin:12px 0 0}
@@ -1267,5 +1445,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 `
+
 
 
