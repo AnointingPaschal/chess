@@ -1,4 +1,39 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import '@rainbow-me/rainbowkit/styles.css'
+import {
+  getDefaultConfig,
+  RainbowKitProvider,
+  ConnectButton,
+  darkTheme,
+  Chain
+} from '@rainbow-me/rainbowkit'
+import { WagmiProvider, useAccount, useSendTransaction } from 'wagmi'
+import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
+import { parseEther } from 'viem'
+
+// ── Web3 & Ritual Testnet Configuration ───────────────────────────────────────
+
+const ritualTestnet = {
+  id: 1979,
+  name: 'Ritual Testnet',
+  iconUrl: 'https://ritual.net/favicon.ico',
+  nativeCurrency: { name: 'Ritual', symbol: 'RITUAL', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://rpc.ritual.net'] }, 
+  },
+  blockExplorers: {
+    default: { name: 'Ritual Explorer', url: 'https://explorer.ritualfoundation.org' },
+  },
+} as const satisfies Chain;
+
+const config = getDefaultConfig({
+  appName: 'Chess On Ritual',
+  projectId: '3fcc6bba6f1de962d911bb5b5c3dba68', // Standard public WalletConnect ID
+  chains: [ritualTestnet],
+  ssr: false, 
+});
+
+const queryClient = new QueryClient();
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -45,26 +80,51 @@ const PST: Record<string, number[]> = {
 const AI_DELAY: Record<number, number> = { 1:350, 2:700, 3:1100, 4:1800 }
 const AI_TIME:  Record<number, number> = { 1:150, 2:450, 3:850,  4:1500 }
 
-// ── Piece SVGs ────────────────────────────────────────────────────────────────
-
-const SVGS: Record<string, string> = {
-  wK:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22.5 11.63V6M20 8h5" stroke-linejoin="miter"/><path d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5" fill="#fff" stroke-linecap="butt" stroke-linejoin="miter"/><path d="M11.5 37c5.5 3.5 15.5 3.5 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V17s-5.5-3.5-12 2.5c-3 5.5 6 10.5 6 10.5v7" fill="#fff"/><path d="M11.5 30c5.5-3 15.5-3 21 0M11.5 33.5c5.5-3 15.5-3 21 0M11.5 37c5.5-3 15.5-3 21 0"/></g></svg>`,
-  wQ:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill="#fff" fill-rule="evenodd" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM24.5 7.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM41 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM16 8.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM33 8.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"/><path d="M9 26c8.5-8.5 21.5-8.5 27 0l2-12-10 10 2-12.5-8 12.5-3-14.5-3 14.5-8-12.5 2 12.5L7 14z" stroke-linecap="butt"/><path d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1.5 2.5-1.5 2.5-1.5 1.5.5 2.5.5 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4-8.5 5.5-18.5 4-25 0z" stroke-linecap="butt"/><path d="M11.5 30c3.5-1 18.5-1 22 0M12 33.5c4-1.5 17-1.5 21 0" fill="none"/></g></svg>`,
-  wR:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill="#fff" fill-rule="evenodd" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 39h27v-3H9v3zM12 36v-4h21v4H12zM11 14V9h4v2h5V9h5v2h5V9h4v5" stroke-linecap="butt"/><path d="M34 14l-3 3H14l-3-3"/><path d="M31 17v12.5H14V17" stroke-linecap="butt" stroke-linejoin="miter"/><path d="M31 29.5l1.5 2.5h-20l1.5-2.5"/><path d="M11 14h23" fill="none" stroke-linejoin="miter"/></g></svg>`,
-  wB:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><g fill="#fff" stroke-linecap="butt"><path d="M9 36c3.39-.97 10.11.43 13.5-2 3.39 2.43 10.11 1.03 13.5 2 0 0 1.5.5 1.5 1.5-2.5 1-12.5 2-15 .5-2.5 1.5-12.5.5-15-.5 0-1 1.5-1.5 1.5-1.5z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/></g><path d="M17.5 26h10M15 30h15M22.5 15.5v5M20 18h5" stroke-linejoin="miter"/></g></svg>`,
-  wN:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21" fill="#fff"/><path d="M24 18c.38 5.12-1.37 8.04-9 12.5-7.63 4.46-4.63 9-4.5 12.5 2.5 2.5 15.5 2.5 18 0 0-7 4-6.5 2.5-11-.71-2.14-2.86-4.43-2-6" fill="#fff"/><path d="M9.5 25.5a.5.5 0 1 0-1 0 .5.5 0 0 0 1 0z" fill="#000" stroke="#000"/><path d="M14.933 15.75a.5 1.5 30 1 0-.866-.5.5 1.5 30 0 0 .866.5z" fill="#000" stroke="#000" stroke-width="1"/></g></svg>`,
-  wP:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03C15.41 27.85 11 31.68 11 39.5h23c0-7.82-4.41-11.65-7.41-13.47C28.06 24.84 29 23.03 29 21c0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z" fill="#fff" stroke="#000" stroke-width="1.5" stroke-linecap="round"/></svg>`,
-  bK:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22.5 11.63V6" stroke-linejoin="miter"/><path d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5" fill="#000" stroke-linecap="butt" stroke-linejoin="miter"/><path d="M11.5 37c5.5 3.5 15.5 3.5 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V17s-5.5-3.5-12 2.5c-3 5.5 6 10.5 6 10.5v7" fill="#000"/><path d="M20 8h5" stroke-linejoin="miter"/><path d="M32 29.5s8.5-4 6-9.7c-3.3-5.3-12.5-3-16.2 3.9M11.5 30c5.5-3 15.5-3 21 0M11.5 33.5c5.5-3 15.5-3 21 0M11.5 37c5.5-3 15.5-3 21 0" stroke="#fff"/></g></svg>`,
-  bQ:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill-rule="evenodd" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><g stroke="none"><circle cx="6" cy="12" r="2.75" fill="#000"/><circle cx="14" cy="9" r="2.75" fill="#000"/><circle cx="22.5" cy="8" r="2.75" fill="#000"/><circle cx="31" cy="9" r="2.75" fill="#000"/><circle cx="39" cy="12" r="2.75" fill="#000"/></g><path d="M9 26c8.5-8.5 21.5-8.5 27 0l2.5-12-10 10 2-12.5-8 12.5-3-14.5-3 14.5-8-12.5 2 12.5L6.5 14z" stroke-linecap="butt" fill="#000"/><path d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1.5 2.5-1.5 2.5-1.5 1.5.5 2.5.5 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4-8.5 5.5-18.5 4-25 0z" fill="#000" stroke-linecap="butt"/><path d="M11.5 30c3.5-1 18.5-1 22 0M12 33.5c4-1.5 17-1.5 21 0" fill="none" stroke="#fff"/></g></svg>`,
-  bR:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill-rule="evenodd" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 39h27v-3H9v3zM12.5 32l1.5-2.5h17l1.5 2.5h-20zM12 36v-4h21v4H12z" stroke-linecap="butt" fill="#000"/><path d="M14 29.5v-13h17v13H14z" stroke-linecap="butt" stroke-linejoin="miter" fill="#000"/><path d="M14 16.5L11 14h23l-3 2.5H14zM11 14V9h4v2h5V9h5v2h5V9h4v5H11z" stroke-linecap="butt" fill="#000"/><path d="M12 35.5h21M13 31.5h19M14 29.5h17M14 16.5h17M11 14h23" fill="none" stroke="#fff" stroke-width="1" stroke-linejoin="miter"/></g></svg>`,
-  bB:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill-rule="evenodd" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><g fill="#000" stroke-linecap="butt"><path d="M9 36c3.39-.97 10.11.43 13.5-2 3.39 2.43 10.11 1.03 13.5 2 0 0 1.5.5 1.5 1.5-2.5 1-12.5 2-15 .5-2.5 1.5-12.5.5-15-.5 0-1 1.5-1.5 1.5-1.5z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z"/></g><path d="M17.5 26h10M15 30h15M22.5 15.5v5M20 18h5" stroke="#fff" stroke-linejoin="miter"/></g></svg>`,
-  bN:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21" fill="#000"/><path d="M24 18c.38 5.12-1.37 8.04-9 12.5-7.63 4.46-4.63 9-4.5 12.5 2.5 2.5 15.5 2.5 18 0 0-7 4-6.5 2.5-11-.71-2.14-2.86-4.43-2-6" fill="#000"/><path d="M9.5 25.5a.5.5 0 1 0-1 0 .5.5 0 0 0 1 0z" fill="#fff" stroke="#fff"/><path d="M14.933 15.75a.5 1.5 30 1 0-.866-.5.5 1.5 30 0 0 .866.5z" fill="#fff" stroke="#fff" stroke-width="1"/></g></svg>`,
-  bP:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03C15.41 27.85 11 31.68 11 39.5h23c0-7.82-4.41-11.65-7.41-13.47C28.06 24.84 29 23.03 29 21c0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z" fill="#000" stroke="#000" stroke-width="1.5" stroke-linecap="round"/></svg>`
+// ── Realistic Piece Textures ──────────────────────────────────────────────────
+const IMGS: Record<string,string> = {
+  wK: 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
+  wQ: 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
+  wR: 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+  wB: 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
+  wN: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+  wP: 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
+  bK: 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
+  bQ: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
+  bR: 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+  bB: 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
+  bN: 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+  bP: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg'
 }
 
-const IMGS: Record<string,string> = Object.fromEntries(
-  Object.entries(SVGS).map(([k,v]) => [k, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(v)])
-)
+// ── Move Translator (Plain English) ───────────────────────────────────────────
+function sanToSimple(san: string, color: Color): string {
+  if (san === 'O-O') return 'Castles Short';
+  if (san === 'O-O-O') return 'Castles Long';
+  
+  let pChar = color === 'w' ? '♙' : '♟';
+  let clean = san;
+  
+  if (/^[KQRBN]/.test(san)) {
+    const wM: Record<string, string> = { K:'♔', Q:'♕', R:'♖', B:'♗', N:'♘' };
+    const bM: Record<string, string> = { K:'♚', Q:'♛', R:'♜', B:'♝', N:'♞' };
+    pChar = color === 'w' ? wM[san[0]] : bM[san[0]];
+    clean = san.slice(1);
+  }
+  
+  const isCap = clean.includes('x');
+  const isCheck = clean.includes('+');
+  const isMate = clean.includes('#');
+  
+  clean = clean.replace(/[+#x]/g, '');
+  
+  // Extract destination square
+  const dest = clean.slice(-2);
+  let action = isCap ? `takes ${dest}` : `to ${dest}`;
+  
+  let end = isMate ? ' Checkmate!' : isCheck ? ' Check' : '';
+  
+  return `${pChar} ${action}${end}`;
+}
 
 // ── Chess Engine (pure functions) ─────────────────────────────────────────────
 
@@ -376,9 +436,23 @@ function mdToHtml(t: string): string {
     .replace(/\n/g,'<br/>')
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
+// ── Main Provider Wrapper ─────────────────────────────────────────────────────
 
 export default function IndexPage() {
+  return (
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider theme={darkTheme({ accentColor: '#d4af37', accentColorForeground: '#1a1610' })}>
+          <ChessApp />
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
+  )
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
+function ChessApp() {
   // ── Game state ──
   const [gs,      setGs]      = useState<GameState>(initialGS)
   const [sel,     setSel]     = useState<number|null>(null)
@@ -401,11 +475,12 @@ export default function IndexPage() {
   // ── Settings (read from localStorage) ──
   const [settings, setSettings] = useState<Settings>({model:''})
 
-  // ── Wallet ──
-  const [walletAddr,    setWalletAddr]    = useState('')
-  const [walletConn,    setWalletConn]    = useState(false)
+  // ── Wagmi Wallet & Payment State ──
+  const { address, isConnected } = useAccount()
+  const { sendTransactionAsync } = useSendTransaction()
   const [pendingMode,   setPendingMode]   = useState<GameMode|null>(null)
   const [paygateOpen,   setPaygateOpen]   = useState(false)
+  const [isPaying,      setIsPaying]      = useState(false) // Tracking tx status
   const [overlayOpen,   setOverlayOpen]   = useState(false)
   const [activeTab,     setActiveTab]     = useState<'moves'|'chain'>('moves')
 
@@ -414,7 +489,6 @@ export default function IndexPage() {
 
   // ── Load settings ──
   useEffect(() => {
-    // Load active model from localStorage, fallback to /api/config
     const local = localStorage.getItem('ritual-active-model')
     if (local) {
       setSettings({ model: local })
@@ -489,13 +563,47 @@ export default function IndexPage() {
         ? `New game — I'm playing Black. Ask me anything about the position!`
         : `New game! AI analysis is available — ask me about the position.`
       : 'New game started! Ask me about any position.'
-    setChat([{id:'0',role:'llm',text:greet,verified:false}])
+    
+    // Initial Greeting Animation
+    const msgId = '0';
+    setChat([{ id: msgId, role: 'llm', text: '', verified: false }]);
+    let i = 0;
+    const interval = setInterval(() => {
+      setChat(prev => prev.map(msg => msg.id === msgId ? { ...msg, text: greet.slice(0, i + 1) } : msg));
+      i++;
+      if (i >= greet.length) clearInterval(interval);
+    }, 10);
+
     if (m==='llm' && !settings.model) showToast('AI service starting…')
   }
 
   function requestGame(m: GameMode) { setPendingMode(m); setPaygateOpen(true) }
-  function confirmGame()            { setPaygateOpen(false); startGame(pendingMode??'ai') }
-  function resign()                 { if(!active||over)return; endGame(gs.turn==='w'?'b':'w','resign') }
+  
+  // Web3 Transaction logic
+  async function confirmGame() {
+    if (!isConnected) {
+       showToast('Please connect your wallet first via the top right button'); 
+       return; 
+    }
+
+    setIsPaying(true);
+    try {
+      await sendTransactionAsync({
+        to: '0x00dFB863c3033F8e23C3397f1c82f967C49178CA',
+        value: parseEther('0.01')
+      });
+      showToast('Transaction sent ✓');
+      setPaygateOpen(false); 
+      startGame(pendingMode ?? 'ai');
+    } catch(e: any) {
+      console.error(e);
+      showToast('Transaction cancelled or failed');
+    } finally {
+      setIsPaying(false);
+    }
+  }
+
+  function resign() { if(!active||over)return; endGame(gs.turn==='w'?'b':'w','resign') }
   function endGame(winner: Color|null, reason: string) {
     setOver(true); setActive(false)
     setResult({over:true,winner,reason}); setOverlayOpen(true)
@@ -546,8 +654,19 @@ export default function IndexPage() {
       const next=execMove(gs,chosenMove)
       if (next) {
         setGs(next)
-        const hash=fakeHash()
-        setChat(prev=>[...prev,{id:Date.now()+'',role:'llm',text:`Played **${san}** (${chosen})`,verified:true,hash:hash.slice(0,16)+'…'}])
+        const finalMsg = `Played **${sanToSimple(san, 'b')}**`;
+        const msgId = Date.now() + '';
+        const hash = fakeHash()
+        
+        // Setup typing response for move
+        setChat(prev=>[...prev,{id: msgId, role:'llm', text:'', verified:true, hash:hash.slice(0,16)+'…'}])
+        let i = 0;
+        const interval = setInterval(() => {
+          setChat(prev => prev.map(m => m.id === msgId ? { ...m, text: finalMsg.slice(0, i + 1) } : m));
+          i++;
+          if (i >= finalMsg.length) clearInterval(interval);
+        }, 10);
+
         const r=gameResult(next)
         if (r.over) { setOver(true); setActive(false); setResult(r); setOverlayOpen(true) }
       }
@@ -569,26 +688,39 @@ export default function IndexPage() {
     }
     const fen=toFEN(gs)
     const pgn=gs.moveHistory.map(m=>m.color==='w'?`${m.num}. ${m.san}`:m.san).join(' ')||'(no moves yet)'
-    const system=`You are the Ritual LLM, a chess analysis AI on the Ritual blockchain (Chain 1979). Provide concise, sharp chess insights in 2-4 sentences. Use chess notation freely. Never say you are Claude or made by Anthropic.`
-    const user=`FEN: ${fen}\nMoves: ${pgn}\n${gs.turn==='w'?'White':'Black'} to move.\n\nQuestion: ${msg}`
+    
+    // Updated System Prompt with Greeting instructions & plain English constraints
+    const system=`You are an elite, grandmaster-level chess coach and analyst.
+CRITICAL INSTRUCTION 1: If the user greets you (e.g., 'hi', 'hello', 'welcome'), respond warmly to the greeting FIRST and ask what they would love you to do or how you can assist them today, before offering any unprompted analysis.
+CRITICAL INSTRUCTION 2: Use simple, plain English. AVOID using grid coordinates (like "e4" or "Nf3") whenever possible. 
+Instead, describe pieces by their location or role (e.g., "your King's pawn", "the right Knight", "move your Bishop to control the long diagonal").
+Provide winning strategies, pinpoint tactical blunders, and give clear, actionable advice in 2-4 short sentences.`
+    
+    const user=`FEN: ${fen}\nMoves: ${pgn}\n${gs.turn==='w'?'White':'Black'} to move.\n\nUser Message: ${msg}`
+    
     try {
       const resp=await callLLM(system,user,settings.model)
       const hash=fakeHash()
-      setChat(prev=>prev.filter(m=>!m.thinking).concat({id:Date.now()+'',role:'llm',text:resp,verified:true,hash:hash.slice(0,16)+'…'}))
+      const msgId = Date.now() + '';
+      
+      // Remove thinking bubble and start typing effect
+      setChat(prev=>prev.filter(m=>!m.thinking).concat({id: msgId, role:'llm', text:'', verified:true, hash:hash.slice(0,16)+'…'}))
+      
+      let i = 0;
+      const interval = setInterval(() => {
+        setChat(prev => prev.map(m => m.id === msgId ? { ...m, text: resp.slice(0, i + 1) } : m));
+        i++;
+        if (i >= resp.length) {
+          clearInterval(interval);
+          setChatBusy(false);
+        }
+      }, 10);
+
     } catch(e: unknown) {
       const msg2=e instanceof Error?e.message:String(e)
       setChat(prev=>prev.filter(m=>!m.thinking).concat({id:Date.now()+'',role:'llm',text:'Analysis unavailable. Please try again.'}))
-    } finally { setChatBusy(false) }
-  }
-
-  // ── Wallet ──
-  async function connectWallet() {
-    const eth=(window as any).ethereum
-    if (!eth) { showToast('Install MetaMask to connect wallet'); return }
-    try {
-      const accs=await eth.request({method:'eth_requestAccounts'})
-      setWalletAddr(accs[0]); setWalletConn(true); showToast('Wallet connected ✓')
-    } catch(e: unknown) { showToast('Connection failed') }
+      setChatBusy(false);
+    }
   }
 
   // ── Board helpers ──
@@ -621,11 +753,11 @@ export default function IndexPage() {
           </div>
         </div>
         <div className="hdr-right">
-          <div className="chain-pill"><span className="chain-dot"/><span>Ritual · 1979</span></div>
-          
-          <button className="hdr-btn primary" onClick={connectWallet}>
-            {walletConn ? `${walletAddr.slice(0,6)}…${walletAddr.slice(-4)}` : 'Connect Wallet'}
-          </button>
+          {/* Integrated RainbowKit ConnectButton */}
+          <ConnectButton 
+            chainStatus="icon" 
+            showBalance={false}
+          />
         </div>
       </header>
 
@@ -679,9 +811,6 @@ export default function IndexPage() {
         {/* BOARD */}
         <div className="board-col">
           <div className="board-outer">
-            <div className="coords-rank">
-              {(flipped?[1,2,3,4,5,6,7,8]:[8,7,6,5,4,3,2,1]).map(n=><span key={n}>{n}</span>)}
-            </div>
             <div className="board">
               {Array.from({length:64},(_,vi)=>{
                 const vr=Math.floor(vi/8), vc=vi%8
@@ -705,17 +834,15 @@ export default function IndexPage() {
                     ].join(' ')}
                     onClick={()=>onSq(s)}
                   >
+                    {/* Embedded faint coordinates */}
+                    {vc === 0 && <span className="sq-rank">{8 - r}</span>}
+                    {vr === 7 && <span className="sq-file">{'abcdefgh'[c]}</span>}
+
                     {piece && <div className="piece"><img src={IMGS[piece]} alt={piece} draggable={false}/></div>}
                   </div>
                 )
               })}
             </div>
-            <div className="coords-rank">
-              {(flipped?[1,2,3,4,5,6,7,8]:[8,7,6,5,4,3,2,1]).map(n=><span key={n}>{n}</span>)}
-            </div>
-          </div>
-          <div className="coords-file">
-            {(flipped?['h','g','f','e','d','c','b','a']:['a','b','c','d','e','f','g','h']).map(f=><span key={f}>{f}</span>)}
           </div>
           <div className="status-bar">
             <div className="status-left">
@@ -727,7 +854,59 @@ export default function IndexPage() {
         </div>
 
         {/* RIGHT */}
-        <div className="panel">
+        <div className="panel right-panel">
+          
+          {/* ── Chat — Increased height, dynamic typing effect ── */}
+          <div className="chat-wrap" style={{ marginBottom: '16px' }}>
+            <div className="chat-hdr">
+              <div className="chat-hdr-left">
+                <div className="chat-lightning">⚡</div>
+                <div>
+                  <div className="chat-title">Ritual LLM Coach</div>
+                  <div className="chat-subtitle">Verifiable On-Chain Inference</div>
+                </div>
+              </div>
+              <div className="chat-hdr-right">
+                <span className="live-dot"/>
+                <span className="live-label">Verified</span>
+              </div>
+            </div>
+
+            <div className="chat-messages">
+              {chat.map(msg => (
+                <div key={msg.id} className={`chat-msg ${msg.role}`}>
+                  <div className="chat-sender">{msg.role==='user'?'You':'Ritual LLM'}</div>
+                  {msg.thinking ? (
+                    <div className="thinking-bubble">
+                      <span/><span/><span/>
+                    </div>
+                  ) : (
+                    <div
+                      className="chat-bubble"
+                      dangerouslySetInnerHTML={{__html: msg.role==='llm' ? mdToHtml(msg.text) : msg.text}}
+                    />
+                  )}
+                  {msg.verified && msg.hash && (
+                    <div className="verify-badge">✓ Ritual · {msg.hash}</div>
+                  )}
+                </div>
+              ))}
+              <div ref={chatEndRef}/>
+            </div>
+
+            <div className="chat-input-row">
+              <textarea
+                className="chat-textarea"
+                value={chatInput}
+                onChange={e=>setChatInput(e.target.value)}
+                onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}}}
+                placeholder="Say hello, or ask for advice..."
+                rows={1}
+              />
+              <button className="chat-send" onClick={sendChat} disabled={chatBusy}>↑</button>
+            </div>
+          </div>
+
           <div className="tabs-bar">
             <button className={`tab${activeTab==='moves'?' active':''}`} onClick={()=>setActiveTab('moves')}>♟ Moves</button>
             <button className={`tab${activeTab==='chain'?' active':''}`} onClick={()=>setActiveTab('chain')}>⛓ Chain</button>
@@ -737,13 +916,18 @@ export default function IndexPage() {
             <div className="card">
               <div className="card-title">Move History</div>
               <div className="move-list">
+                <div className="move-list-header">
+                  <span className="mn">#</span>
+                  <span className="mh-header">White</span>
+                  <span className="mh-header">Black</span>
+                </div>
                 {Array.from({length:Math.ceil(gs.moveHistory.length/2)},(_,i)=>{
                   const wm=gs.moveHistory[i*2], bm=gs.moveHistory[i*2+1]
                   return (
                     <div key={i} className="move-row">
                       <span className="mn">{wm.num}.</span>
-                      <span className="mh">{wm.san}</span>
-                      <span className="mh">{bm?.san??''}</span>
+                      <span className="mh white-move">{sanToSimple(wm.san, 'w')}</span>
+                      {bm ? <span className="mh black-move">{sanToSimple(bm.san, 'b')}</span> : <span className="mh empty-move"></span>}
                     </div>
                   )
                 })}
@@ -755,15 +939,16 @@ export default function IndexPage() {
             <>
               <div className="card">
                 <div className="card-title">Ritual Wallet</div>
-                {walletConn ? (
+                {isConnected ? (
                   <>
                     <div className="connected-badge">Wallet Connected</div>
-                    <div className="addr-box">{walletAddr}</div>
+                    <div className="addr-box">{address}</div>
                   </>
                 ) : (
                   <>
                     <p className="wallet-hint">Connect your wallet to record games on-chain.</p>
-                    <button className="btn btn-ink" onClick={connectWallet}>Connect MetaMask</button>
+                    {/* Secondary Connect Button inside the tab for convenience */}
+                    <ConnectButton showBalance={false} />
                   </>
                 )}
               </div>
@@ -784,61 +969,6 @@ export default function IndexPage() {
         </div>
       </main>
 
-      {/* ── Chat — standalone below board ── */}
-      <section className="chat-section">
-        <div className="chat-wrap">
-          <div className="chat-hdr">
-            <div className="chat-hdr-left">
-              <div className="chat-lightning">⚡</div>
-              <div>
-                <div className="chat-title">Ritual LLM</div>
-                <div className="chat-subtitle">
-                  Verifiable On-Chain Inference
-                </div>
-              </div>
-            </div>
-            <div className="chat-hdr-right">
-              <span className="live-dot"/>
-              <span className="live-label">Verified On-Chain</span>
-            </div>
-          </div>
-
-          <div className="chat-messages">
-            {chat.map(msg => (
-              <div key={msg.id} className={`chat-msg ${msg.role}`}>
-                <div className="chat-sender">{msg.role==='user'?'You':'Ritual LLM'}</div>
-                {msg.thinking ? (
-                  <div className="thinking-bubble">
-                    <span/><span/><span/>
-                  </div>
-                ) : (
-                  <div
-                    className="chat-bubble"
-                    dangerouslySetInnerHTML={{__html: msg.role==='llm' ? mdToHtml(msg.text) : msg.text}}
-                  />
-                )}
-                {msg.verified && msg.hash && (
-                  <div className="verify-badge">✓ Ritual · {msg.hash}</div>
-                )}
-              </div>
-            ))}
-            <div ref={chatEndRef}/>
-          </div>
-
-          <div className="chat-input-row">
-            <textarea
-              className="chat-textarea"
-              value={chatInput}
-              onChange={e=>setChatInput(e.target.value)}
-              onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}}}
-              placeholder="Ask about the position… (Enter to send, Shift+Enter for newline)"
-              rows={2}
-            />
-            <button className="chat-send" onClick={sendChat} disabled={chatBusy}>↑</button>
-          </div>
-        </div>
-      </section>
-
       {/* ── Pay Gate ── */}
       {paygateOpen && (
         <div className="overlay-bg">
@@ -858,8 +988,11 @@ export default function IndexPage() {
               <div className="pay-fee-label">ritual<br/><span>per game session</span></div>
             </div>
             <div className="pay-actions">
-              <button className="btn btn-ink" onClick={confirmGame}>Pay &amp; Play</button>
-              <button className="btn btn-outline" onClick={()=>setPaygateOpen(false)}>Cancel</button>
+              {/* Button updated to interact with Wagmi useSendTransaction */}
+              <button className="btn btn-ink" onClick={confirmGame} disabled={isPaying}>
+                {isPaying ? 'Signing...' : 'Pay & Play'}
+              </button>
+              <button className="btn btn-outline" onClick={()=>setPaygateOpen(false)} disabled={isPaying}>Cancel</button>
             </div>
           </div>
         </div>
@@ -919,17 +1052,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 .logo-text{font-family:'Playfair Display SC',serif;font-size:18px;font-weight:700;color:var(--ink);letter-spacing:.02em}
 .logo-sub{font-size:10px;color:var(--ink3);letter-spacing:.12em;text-transform:uppercase}
 .hdr-right{display:flex;align-items:center;gap:10px}
-.chain-pill{display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:11px;color:var(--ink2)}
+.chain-pill{display:flex;align-items:center;gap:6px;background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;font-size:11px;color:var(--ink2);margin-right:12px}
 .chain-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 2s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
-.model-pill{display:flex;align-items:center;gap:5px;background:linear-gradient(135deg,#1a1610,#2a2010);border:1px solid var(--gold2);border-radius:20px;padding:5px 12px;font-size:10px;color:var(--gold);font-family:'DM Mono',monospace;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hdr-btn{font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;border:1px solid var(--border);border-radius:8px;padding:7px 16px;background:var(--bg);color:var(--ink);cursor:pointer;transition:all .15s;text-decoration:none;display:inline-flex;align-items:center}
-.hdr-btn:hover{background:var(--bg2)}
-.hdr-btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
-.hdr-btn.primary:hover{background:#2e2922}
 
 /* Game Grid */
-.game-grid{display:grid;grid-template-columns:260px 1fr 264px;max-width:1180px;margin:0 auto;padding:24px 20px 0;align-items:start;gap:0}
+.game-grid{display:grid;grid-template-columns:260px 1fr 300px;max-width:1240px;margin:0 auto;padding:24px 20px 0;align-items:start;gap:0}
 @media(max-width:960px){.game-grid{grid-template-columns:1fr;padding:16px}.hdr{padding:0 16px}}
 
 .panel{padding:0 16px}
@@ -964,34 +1092,41 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 .btn-gold:hover{background:#faedc8}
 .btn-llm{background:linear-gradient(135deg,#1a1610,#2a2010);color:var(--gold);border-color:var(--gold2);box-shadow:0 2px 10px rgba(212,175,55,.2)}
 .btn-llm:hover{background:linear-gradient(135deg,#2a2010,#3a3018)}
+/* Button disabled state */
+.btn:disabled{opacity:0.6;cursor:not-allowed;}
 
 /* Difficulty */
 .diff-row{display:flex;gap:5px}
 .diff-btn{flex:1;font-family:'DM Sans',sans-serif;font-size:10px;font-weight:600;padding:6px 4px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--ink3);cursor:pointer;transition:all .15s}
 .diff-btn.active{background:var(--ink);color:var(--gold);border-color:var(--ink)}
 
-/* Board */
+/* ═══ Realistic Chess Board ═══ */
 .board-col{display:flex;flex-direction:column;align-items:center}
-.board-outer{display:flex;align-items:center;gap:8px;margin:12px 0 0}
-.coords-rank{display:flex;flex-direction:column;justify-content:space-around;height:min(504px,88vw);width:18px;text-align:center}
-.coords-rank span,.coords-file span{font-family:'Playfair Display',serif;font-size:13px;font-weight:700;color:var(--gold2)}
-.board{--bs:min(504px,88vw);display:grid;grid-template-columns:repeat(8,calc(var(--bs)/8));grid-template-rows:repeat(8,calc(var(--bs)/8));width:var(--bs);height:var(--bs);border-radius:4px;overflow:hidden;box-shadow:0 0 0 3px var(--ink),0 0 0 7px var(--gold),0 0 0 12px var(--ink),var(--shadow-lg)}
-.coords-file{display:flex;justify-content:space-around;width:min(504px,88vw);padding:6px 0 0;margin-left:26px}
+.board-outer{display:flex;align-items:center;gap:0;margin:12px 0 0}
+.board{--bs:min(504px,88vw);display:grid;grid-template-columns:repeat(8,calc(var(--bs)/8));grid-template-rows:repeat(8,calc(var(--bs)/8));width:var(--bs);height:var(--bs);border-radius:4px;overflow:hidden;box-shadow: 0 0 0 4px #4a2e15, 0 0 0 10px #2e1a0b, 0 16px 32px rgba(0,0,0,0.4);}
 .sq{position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .1s}
-.sq.l{background:radial-gradient(circle at 30% 30%,#f4efe6,#dfd8cb)}
-.sq.d{background:radial-gradient(circle at 30% 30%,#353f3a,#232a26);box-shadow:inset 0 0 15px rgba(0,0,0,.4)}
+/* Wood textures for the board squares */
+.sq.l{background: linear-gradient(135deg, #e3c193 0%, #d1ae7e 100%); box-shadow: inset 0 0 10px rgba(139,69,19,0.15);}
+.sq.d{background: linear-gradient(135deg, #8b5a2b 0%, #6b4226 100%); box-shadow: inset 0 0 15px rgba(0,0,0,0.3);}
 .sq.selected::after{content:'';position:absolute;inset:0;background:radial-gradient(circle,rgba(212,175,55,.4),transparent 70%);border:2px solid var(--gold);box-shadow:0 0 14px var(--gold);z-index:4;pointer-events:none}
 .sq.lm-l{background:#ebd59b!important}
 .sq.lm-d{background:#626046!important}
 .sq.hint::before{content:'';position:absolute;width:28%;height:28%;border-radius:50%;background:radial-gradient(circle,var(--gold),#9c7b16);box-shadow:0 2px 6px rgba(0,0,0,.5);z-index:2}
 .sq.cap::before{width:86%;height:86%;background:transparent;border:4px dashed var(--gold);border-radius:50%}
 .sq.incheck{background:radial-gradient(circle,#b83232,#5a1212)!important}
-.piece{position:relative;z-index:3;width:90%;height:90%;display:flex;align-items:center;justify-content:center;pointer-events:none;transition:transform .15s}
-.sq:hover .piece{transform:scale(1.07)}
-.piece img{width:100%;height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none}
+.piece{position:relative;z-index:3;width:95%;height:95%;display:flex;align-items:center;justify-content:center;pointer-events:none;transition:transform .15s}
+.sq:hover .piece{transform:scale(1.08)}
+/* Small drop shadow on pieces to make them pop off the board */
+.piece img{width:100%;height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none; filter: drop-shadow(0 3px 4px rgba(0,0,0,0.4));}
+
+/* Faint Coordinates overlay on squares */
+.sq-rank { position: absolute; top: 2px; left: 3px; font-size: 11px; font-weight: 700; opacity: 0.6; pointer-events: none; }
+.sq-file { position: absolute; bottom: 0px; right: 3px; font-size: 11px; font-weight: 700; opacity: 0.6; pointer-events: none; }
+.sq.l .sq-rank, .sq.l .sq-file { color: #8b5a2b; }
+.sq.d .sq-rank, .sq.d .sq-file { color: #e3c193; }
 
 /* Status bar */
-.status-bar{display:flex;align-items:center;justify-content:space-between;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 16px;margin-top:8px;width:min(504px,88vw);box-shadow:var(--shadow)}
+.status-bar{display:flex;align-items:center;justify-content:space-between;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 16px;margin-top:12px;width:min(504px,88vw);box-shadow:var(--shadow)}
 .status-left{display:flex;align-items:center;gap:10px}
 .turn-swatch{width:20px;height:20px;border-radius:50%;flex-shrink:0;box-shadow:inset 0 -2px 4px rgba(0,0,0,.15),0 2px 5px rgba(0,0,0,.2)}
 .status-txt{font-family:'Playfair Display',serif;font-size:14px;font-weight:700;color:var(--ink)}
@@ -1003,12 +1138,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 .tab.active{background:var(--bg);color:var(--ink);box-shadow:var(--shadow)}
 
 /* Move list */
-.move-list{max-height:220px;overflow-y:auto;font-size:13px;font-weight:500;line-height:1.8;scrollbar-width:thin}
-.move-row{display:flex;gap:4px;padding:1px 0}
+.move-list{max-height:300px;overflow-y:auto;font-size:11px;font-weight:600;line-height:1.4;scrollbar-width:thin;}
+.move-list-header{display:grid;grid-template-columns:25px 1fr 1fr;gap:4px;padding:4px 8px;border-bottom:1px solid var(--border);margin-bottom:4px;font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:0.05em;}
+.move-row{display:grid;grid-template-columns:25px 1fr 1fr;gap:4px;padding:2px 4px;align-items:center;}
 .move-row:hover{background:var(--bg2);border-radius:4px}
-.mn{color:var(--ink3);min-width:28px;padding-left:4px}
-.mh{flex:1;padding:0 4px;border-radius:3px;cursor:pointer}
-.mh:hover{background:var(--bg3)}
+.mn{color:var(--ink3);font-size:10px;}
+.mh{padding:5px 6px;border-radius:6px;cursor:pointer;background:var(--bg);border:1px solid var(--border);text-align:left;transition:all 0.15s;}
+.mh.white-move{background:#ffffff;}
+.mh.black-move{background:#f8f6f2; color:var(--ink2);}
+.mh.empty-move{background:transparent;border:none;pointer-events:none;}
+.mh:hover:not(.empty-move){background:var(--ink);color:var(--gold);border-color:var(--ink);}
 
 /* Chain tab */
 .connected-badge{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--green);font-weight:600;margin-bottom:8px}
@@ -1022,57 +1161,55 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 .contract-meta{font-size:11px;color:var(--ink3);line-height:1.7}
 .contract-meta b{color:var(--ink2)}
 
-/* ═══ CHAT SECTION ═══ */
-.chat-section{
-  max-width:1180px;margin:28px auto 60px;padding:0 20px;
-}
+/* ═══ COMPACT CHAT SECTION ═══ */
 .chat-wrap{
-  background:var(--bg);border:1px solid var(--border);border-radius:16px;
+  background:var(--bg);border:1px solid var(--border);border-radius:12px;
   overflow:hidden;box-shadow:var(--shadow);
 }
 .chat-hdr{
   display:flex;align-items:center;justify-content:space-between;
-  padding:14px 20px;
+  padding:10px 14px;
   background:linear-gradient(135deg,#1a1610 0%,#2e2416 100%);
   border-bottom:1px solid rgba(212,175,55,.2);
 }
-.chat-hdr-left{display:flex;align-items:center;gap:12px}
-.chat-lightning{font-size:22px}
-.chat-title{font-family:'Playfair Display SC',serif;font-size:14px;font-weight:700;color:var(--gold);letter-spacing:.08em}
-.chat-subtitle{font-family:'DM Mono',monospace;font-size:10px;color:rgba(212,175,55,.55);letter-spacing:.06em;margin-top:2px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chat-hdr-right{display:flex;align-items:center;gap:7px;flex-shrink:0}
-.live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 1.8s infinite;flex-shrink:0}
-.live-label{font-size:10px;color:var(--green);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.chat-hdr-left{display:flex;align-items:center;gap:10px}
+.chat-lightning{font-size:18px}
+.chat-title{font-family:'Playfair Display SC',serif;font-size:12px;font-weight:700;color:var(--gold);letter-spacing:.08em}
+.chat-subtitle{font-family:'DM Mono',monospace;font-size:9px;color:rgba(212,175,55,.55);letter-spacing:.06em;margin-top:2px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-hdr-right{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 1.8s infinite;flex-shrink:0}
+.live-label{font-size:9px;color:var(--green);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 
 .chat-messages{
-  height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;
-  padding:18px 20px;scrollbar-width:thin;scrollbar-color:var(--border) transparent;
+  height:280px; /* Increased Height */
+  overflow-y:auto;display:flex;flex-direction:column;gap:10px;
+  padding:12px 14px;scrollbar-width:thin;scrollbar-color:var(--border) transparent;
   background:var(--bg);
 }
-.chat-msg{display:flex;flex-direction:column;gap:3px}
+.chat-msg{display:flex;flex-direction:column;gap:2px}
 .chat-msg.user{align-items:flex-end}
 .chat-msg.llm{align-items:flex-start}
-.chat-sender{font-size:9px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+.chat-sender{font-size:8px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
 .chat-msg.user .chat-sender{color:var(--ink3)}
 .chat-msg.llm  .chat-sender{color:var(--gold2)}
-.chat-bubble{max-width:70%;padding:10px 14px;font-size:13px;line-height:1.65}
-.chat-msg.user .chat-bubble{background:var(--ink);color:#f5f0e8;border-radius:14px 14px 4px 14px}
-.chat-msg.llm  .chat-bubble{background:var(--gold-bg);border:1px solid rgba(212,175,55,.3);border-radius:14px 14px 14px 4px;color:var(--ink)}
-.chat-bubble code{font-family:'DM Mono',monospace;font-size:11px;background:var(--bg3);padding:1px 5px;border-radius:3px}
-.thinking-bubble{display:flex;gap:5px;align-items:center;padding:12px 16px;background:var(--gold-bg);border:1px solid rgba(212,175,55,.3);border-radius:14px 14px 14px 4px;max-width:80px}
-.thinking-bubble span{width:7px;height:7px;border-radius:50%;background:var(--gold2);opacity:.6;animation:db .9s ease-in-out infinite}
+.chat-bubble{max-width:90%;padding:8px 10px;font-size:11px;line-height:1.45}
+.chat-msg.user .chat-bubble{background:var(--ink);color:#f5f0e8;border-radius:12px 12px 4px 12px}
+.chat-msg.llm  .chat-bubble{background:var(--gold-bg);border:1px solid rgba(212,175,55,.3);border-radius:12px 12px 12px 4px;color:var(--ink)}
+.chat-bubble code{font-family:'DM Mono',monospace;font-size:10px;background:var(--bg3);padding:1px 4px;border-radius:3px}
+.thinking-bubble{display:flex;gap:4px;align-items:center;padding:10px 14px;background:var(--gold-bg);border:1px solid rgba(212,175,55,.3);border-radius:12px 12px 12px 4px;max-width:70px}
+.thinking-bubble span{width:6px;height:6px;border-radius:50%;background:var(--gold2);opacity:.6;animation:db .9s ease-in-out infinite}
 .thinking-bubble span:nth-child(2){animation-delay:.15s}
 .thinking-bubble span:nth-child(3){animation-delay:.3s}
 @keyframes db{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-5px);opacity:1}}
-.verify-badge{font-size:9px;color:var(--green);font-family:'DM Mono',monospace;display:flex;align-items:center;gap:4px;margin-top:2px}
+.verify-badge{font-size:8px;color:var(--green);font-family:'DM Mono',monospace;display:flex;align-items:center;gap:4px;margin-top:2px}
 .verify-badge::before{content:'✓';background:rgba(45,122,79,.12);border:1px solid rgba(45,122,79,.3);border-radius:3px;padding:0 3px;line-height:1.6;font-weight:700}
 
-.chat-input-row{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2)}
-.chat-textarea{flex:1;font-family:'DM Sans',sans-serif;font-size:13px;border:1px solid var(--border);border-radius:8px;padding:9px 12px;background:var(--bg);color:var(--ink);resize:none;outline:none;transition:border .15s;line-height:1.5}
+.chat-input-row{display:flex;gap:6px;padding:10px 12px;border-top:1px solid var(--border);background:var(--bg2)}
+.chat-textarea{flex:1;font-family:'DM Sans',sans-serif;font-size:11px;border:1px solid var(--border);border-radius:6px;padding:7px 10px;background:var(--bg);color:var(--ink);resize:none;outline:none;transition:border .15s;line-height:1.4}
 .chat-textarea:focus{border-color:var(--gold2)}
 .chat-textarea::placeholder{color:var(--ink3)}
-.chat-send{background:var(--ink);color:var(--gold);border:1px solid var(--gold2);border-radius:8px;padding:9px 14px;cursor:pointer;font-size:18px;transition:all .15s;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:42px}
-.chat-send:hover{background:#2e2922;box-shadow:0 0 10px rgba(212,175,55,.3)}
+.chat-send{background:var(--ink);color:var(--gold);border:1px solid var(--gold2);border-radius:6px;padding:6px;cursor:pointer;font-size:14px;transition:all .15s;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:32px}
+.chat-send:hover{background:#2e2922;box-shadow:0 0 8px rgba(212,175,55,.3)}
 .chat-send:disabled{opacity:.35;cursor:not-allowed}
 
 /* Overlays */
@@ -1104,3 +1241,4 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 `
+
