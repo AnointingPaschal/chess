@@ -7,7 +7,7 @@ import {
   darkTheme,
   Chain
 } from '@rainbow-me/rainbowkit'
-import { WagmiProvider, useAccount, useSendTransaction } from 'wagmi'
+import { WagmiProvider, useAccount, useSendTransaction, useChainId, useSwitchChain } from 'wagmi'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
 import { parseEther } from 'viem'
 
@@ -19,11 +19,13 @@ const ritualTestnet = {
   iconUrl: 'https://ritual.net/favicon.ico',
   nativeCurrency: { name: 'Ritual', symbol: 'RITUAL', decimals: 18 },
   rpcUrls: {
-    default: { http: ['https://rpc.ritual.net'] }, 
+    default: { http: ['https://rpc.ritualfoundation.org'] },
+    public:  { http: ['https://rpc.ritualfoundation.org'] },
   },
   blockExplorers: {
     default: { name: 'Ritual Explorer', url: 'https://explorer.ritualfoundation.org' },
   },
+  testnet: true,
 } as const satisfies Chain;
 
 const config = getDefaultConfig({
@@ -478,6 +480,8 @@ function ChessApp() {
   // ── Wagmi Wallet & Payment State ──
   const { address, isConnected } = useAccount()
   const { sendTransactionAsync } = useSendTransaction()
+  const chainId = useChainId()
+  const { switchChainAsync } = useSwitchChain()
   const [pendingMode,   setPendingMode]   = useState<GameMode|null>(null)
   const [paygateOpen,   setPaygateOpen]   = useState(false)
   const [isPaying,      setIsPaying]      = useState(false) // Tracking tx status
@@ -582,24 +586,41 @@ function ChessApp() {
   // Web3 Transaction logic
   async function confirmGame() {
     if (!isConnected) {
-       showToast('Please connect your wallet first via the top right button'); 
-       return; 
+      showToast('Connect your wallet first')
+      return
     }
 
-    setIsPaying(true);
+    // Switch to Ritual if wallet is on a different chain
+    if (chainId !== 1979) {
+      try {
+        await switchChainAsync({ chainId: 1979 })
+      } catch {
+        showToast('Please switch to Ritual network in your wallet')
+        return
+      }
+    }
+
+    setIsPaying(true)
     try {
       await sendTransactionAsync({
-        to: '0x00dFB863c3033F8e23C3397f1c82f967C49178CA',
-        value: parseEther('0.01')
-      });
-      showToast('Transaction sent ✓');
-      setPaygateOpen(false); 
-      startGame(pendingMode ?? 'ai');
-    } catch(e: any) {
-      console.error(e);
-      showToast('Transaction cancelled or failed');
+        to:      '0x00dFB863c3033F8e23C3397f1c82f967C49178CA',
+        value:   parseEther('0.01'),
+        chainId: 1979,
+      })
+      showToast('Transaction sent ✓')
+      setPaygateOpen(false)
+      startGame(pendingMode ?? 'ai')
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : ''
+      if (msg.toLowerCase().includes('rejected') || msg.toLowerCase().includes('denied')) {
+        showToast('Transaction cancelled')
+      } else if (msg.toLowerCase().includes('insufficient')) {
+        showToast('Insufficient RITUAL balance')
+      } else {
+        showToast('Transaction failed — check your wallet')
+      }
     } finally {
-      setIsPaying(false);
+      setIsPaying(false)
     }
   }
 
@@ -987,10 +1008,14 @@ Provide winning strategies, pinpoint tactical blunders, and give clear, actionab
               <div className="pay-fee-amount">0.01</div>
               <div className="pay-fee-label">ritual<br/><span>per game session</span></div>
             </div>
+            {isConnected && chainId !== 1979 && (
+              <div className="wrong-chain-note">
+                ⚠ Wallet is on the wrong network.<br/>Clicking below will prompt a switch to Ritual.
+              </div>
+            )}
             <div className="pay-actions">
-              {/* Button updated to interact with Wagmi useSendTransaction */}
               <button className="btn btn-ink" onClick={confirmGame} disabled={isPaying}>
-                {isPaying ? 'Signing...' : 'Pay & Play'}
+                {isPaying ? 'Signing…' : !isConnected ? 'Connect Wallet First' : chainId !== 1979 ? 'Switch & Pay' : 'Pay & Play'}
               </button>
               <button className="btn btn-outline" onClick={()=>setPaygateOpen(false)} disabled={isPaying}>Cancel</button>
             </div>
@@ -1225,6 +1250,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 .pay-fee-amount{font-family:'Playfair Display SC',serif;font-size:34px;font-weight:700;color:var(--gold2)}
 .pay-fee-label{font-size:11px;color:var(--gold2);letter-spacing:.1em;text-transform:uppercase;font-weight:600;text-align:left}
 .pay-fee-label span{font-size:9px;opacity:.7}
+.wrong-chain-note{font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:14px;line-height:1.6;text-align:center}
 .pay-actions{display:flex;gap:10px;justify-content:center}
 .pay-actions .btn{width:auto;min-width:110px;margin:0}
 .ov-icon{display:flex;align-items:center;justify-content:center;width:72px;height:72px;margin:0 auto 12px;font-size:56px}
@@ -1241,4 +1267,5 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);min-
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 `
+
 
